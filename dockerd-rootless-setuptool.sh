@@ -9,15 +9,15 @@ set -eu
 
 # utility functions
 INFO() {
-	/bin/echo -e "\e[104m\e[97m[INFO]\e[49m\e[39m $@"
+	printf '%b\n' "\033[104m\033[97m[INFO]\033[49m\033[39m $*"
 }
 
 WARNING() {
-	/bin/echo >&2 -e "\e[101m\e[97m[WARNING]\e[49m\e[39m $@"
+	printf >&2 '%b\n' "\033[101m\033[97m[WARNING]\033[49m\033[39m $*"
 }
 
 ERROR() {
-	/bin/echo >&2 -e "\e[101m\e[97m[ERROR]\e[49m\e[39m $@"
+	printf >&2 '%b\n' "\033[101m\033[97m[ERROR]\033[49m\033[39m $*"
 }
 
 # constants
@@ -83,7 +83,7 @@ init() {
 	# Set USERNAME from `id -un` and potentially protect backslash
 	# for windbind/samba domain users
 	USERNAME=$(id -un)
-	USERNAME_ESCAPED=$(echo $USERNAME | sed 's/\\/\\\\/g')
+	USERNAME_ESCAPED=$(echo "$USERNAME" | sed 's/\\/\\\\/g')
 
 	# set CFG_DIR
 	CFG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}"
@@ -104,7 +104,8 @@ init() {
 			exit 1
 		fi
 		export XDG_RUNTIME_DIR="$HOME/.docker/run"
-		mkdir -p -m 700 "$XDG_RUNTIME_DIR"
+		mkdir -p "$XDG_RUNTIME_DIR"
+		chmod 700 "$XDG_RUNTIME_DIR"
 		XDG_RUNTIME_DIR_CREATED=1
 	fi
 
@@ -178,7 +179,7 @@ init() {
 	fi
 
 	# instruction: ip_tables module dependency check
-	if ! grep -q ip_tables /proc/modules 2> /dev/null && ! grep -q ip_tables /lib/modules/$(uname -r)/modules.builtin 2> /dev/null; then
+	if ! grep -q ip_tables /proc/modules 2> /dev/null && ! grep -q ip_tables "/lib/modules/$(uname -r)/modules.builtin" 2> /dev/null; then
 		faced_iptables_error=1
 		if [ -z "$OPT_SKIP_IPTABLES" ]; then
 			instructions=$(
@@ -230,11 +231,17 @@ init() {
 
 	# instructions: validate subuid for current user
 	if command -v "getsubids" > /dev/null 2>&1; then
-		getsubids "$USERNAME" > /dev/null 2>&1 || getsubids "$(id -u)" > /dev/null 2>&1
+		if ! getsubids "$USERNAME" > /dev/null 2>&1 && ! getsubids "$(id -u)" > /dev/null 2>&1; then
+			needs_subuid=1
+		else
+			needs_subuid=""
+		fi
+	elif ! grep -q "^$USERNAME_ESCAPED:\|^$(id -u):" /etc/subuid 2> /dev/null; then
+		needs_subuid=1
 	else
-		grep -q "^$USERNAME_ESCAPED:\|^$(id -u):" /etc/subuid 2> /dev/null
+		needs_subuid=""
 	fi
-	if [ $? -ne 0 ]; then
+	if [ -n "${needs_subuid:-}" ]; then
 		instructions=$(
 			cat <<- EOI
 				${instructions}
@@ -246,11 +253,17 @@ init() {
 
 	# instructions: validate subgid for current user
 	if command -v "getsubids" > /dev/null 2>&1; then
-		getsubids -g "$USERNAME" > /dev/null 2>&1 || getsubids -g "$(id -u)" > /dev/null 2>&1
+		if ! getsubids -g "$USERNAME" > /dev/null 2>&1 && ! getsubids -g "$(id -u)" > /dev/null 2>&1; then
+			needs_subgid=1
+		else
+			needs_subgid=""
+		fi
+	elif ! grep -q "^$USERNAME_ESCAPED:\|^$(id -u):" /etc/subgid 2> /dev/null; then
+		needs_subgid=1
 	else
-		grep -q "^$USERNAME_ESCAPED:\|^$(id -u):" /etc/subgid 2> /dev/null
+		needs_subgid=""
 	fi
-	if [ $? -ne 0 ]; then
+	if [ -n "${needs_subgid:-}" ]; then
 		instructions=$(
 			cat <<- EOI
 				${instructions}
@@ -363,7 +376,7 @@ install_systemd() {
 			show_systemd_error
 			exit 1
 		fi
-		DOCKER_HOST="unix://$XDG_RUNTIME_DIR/docker.sock" $BIN/docker version
+		DOCKER_HOST="unix://$XDG_RUNTIME_DIR/docker.sock" "$BIN"/docker version
 		systemctl --user enable "${SYSTEMD_UNIT}"
 	)
 	INFO "Installed ${SYSTEMD_UNIT} successfully."
@@ -478,7 +491,7 @@ cmd_entrypoint_uninstall() {
 	cli_ctx_use "default"
 	INFO 'Configured CLI to use the "default" context.'
 	INFO
-	INFO 'Make sure to unset or update the environment PATH, DOCKER_HOST, and DOCKER_CONTEXT environment variables if you have added them to `~/.bashrc`.'
+	INFO "Make sure to unset or update the environment PATH, DOCKER_HOST, and DOCKER_CONTEXT environment variables if you have added them to \`~/.bashrc\`."
 	INFO "This uninstallation tool does NOT remove Docker binaries and data."
 	INFO "To remove data, run: \`$BIN/rootlesskit rm -rf $HOME/.local/share/docker\`"
 }
