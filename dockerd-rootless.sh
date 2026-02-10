@@ -41,7 +41,7 @@
 set -e -x
 case "$1" in
 	"check" | "install" | "uninstall")
-		echo "Did you mean 'dockerd-rootless-setuptool.sh $@' ?"
+		echo "Did you mean 'dockerd-rootless-setuptool.sh $*' ?"
 		exit 1
 		;;
 esac
@@ -75,12 +75,12 @@ mount_directory() {
 	MOUNT_OPTIONS="${2:---bind}"
 	rm -rf "$DIRECTORY"
 	mkdir -p "$DIRECTORY"
-	mount $MOUNT_OPTIONS "$DIRECTORY_REALPATH" "$DIRECTORY"
+	mount "$MOUNT_OPTIONS" "$DIRECTORY_REALPATH" "$DIRECTORY"
 }
 
 rootlesskit=""
 for f in docker-rootlesskit rootlesskit; do
-	if command -v $f > /dev/null 2>&1; then
+	if command -v "$f" > /dev/null 2>&1; then
 		rootlesskit=$f
 		break
 	fi
@@ -151,12 +151,13 @@ if [ -z "$_DOCKERD_ROOTLESS_CHILD" ]; then
 	#         namespace from being unexpectedly unmounted when `/etc/resolv.conf` is recreated on the host
 	#         (by either systemd-networkd or NetworkManager)
 	# * /run: copy-up is required so that we can create /run/docker (hardcoded for plugins) in our namespace
-	exec $rootlesskit \
-		--state-dir=$DOCKERD_ROOTLESS_ROOTLESSKIT_STATE_DIR \
-		--net=$net --mtu=$mtu \
-		--slirp4netns-sandbox=$DOCKERD_ROOTLESS_ROOTLESSKIT_SLIRP4NETNS_SANDBOX \
-		--slirp4netns-seccomp=$DOCKERD_ROOTLESS_ROOTLESSKIT_SLIRP4NETNS_SECCOMP \
-		$host_loopback --port-driver=$DOCKERD_ROOTLESS_ROOTLESSKIT_PORT_DRIVER \
+	# shellcheck disable=SC2086
+	exec "$rootlesskit" \
+		"--state-dir=$DOCKERD_ROOTLESS_ROOTLESSKIT_STATE_DIR" \
+		"--net=$net" "--mtu=$mtu" \
+		"--slirp4netns-sandbox=$DOCKERD_ROOTLESS_ROOTLESSKIT_SLIRP4NETNS_SANDBOX" \
+		"--slirp4netns-seccomp=$DOCKERD_ROOTLESS_ROOTLESSKIT_SLIRP4NETNS_SECCOMP" \
+		${host_loopback:+$host_loopback} "--port-driver=$DOCKERD_ROOTLESS_ROOTLESSKIT_PORT_DRIVER" \
 		--copy-up=/etc --copy-up=/run \
 		--propagation=rslave \
 		$DOCKERD_ROOTLESS_ROOTLESSKIT_FLAGS \
@@ -201,4 +202,3 @@ else
 
 	exec "$dockerd" "$@"
 fi
-
